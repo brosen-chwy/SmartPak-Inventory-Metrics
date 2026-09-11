@@ -143,11 +143,22 @@ for metric, (label, column) in zip(risk_metrics, RISK_COLUMNS.items()):
     metric.metric(label, f"{inventory[column].eq('AT RISK').sum():,}")
 
 st.subheader("OOS SKUs by location")
-oos_metric_1, oos_metric_2 = st.columns(2)
-oos_metric_1.metric(
-    "Plymouth OOS SKUs", f"{inventory['PLYMOUTH_OOS'].eq('OOS').sum():,}"
+selected_sku_count = len(inventory)
+plymouth_oos_count = inventory["PLYMOUTH_OOS"].eq("OOS").sum()
+reno_oos_count = inventory["RENO_OOS"].eq("OOS").sum()
+
+plymouth_oos_pct = (
+    f"{plymouth_oos_count / selected_sku_count:.1%}" if selected_sku_count else "—"
 )
-oos_metric_2.metric("Reno OOS SKUs", f"{inventory['RENO_OOS'].eq('OOS').sum():,}")
+reno_oos_pct = (
+    f"{reno_oos_count / selected_sku_count:.1%}" if selected_sku_count else "—"
+)
+
+oos_metric_1, oos_metric_2, oos_metric_3, oos_metric_4 = st.columns(4)
+oos_metric_1.metric("Plymouth OOS SKUs", f"{plymouth_oos_count:,}")
+oos_metric_2.metric("Plymouth OOS %", plymouth_oos_pct)
+oos_metric_3.metric("Reno OOS SKUs", f"{reno_oos_count:,}")
+oos_metric_4.metric("Reno OOS %", reno_oos_pct)
 
 st.dataframe(
     inventory,
