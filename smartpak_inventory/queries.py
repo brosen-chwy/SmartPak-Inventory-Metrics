@@ -22,7 +22,6 @@ WITH inventory AS (
         FROM SMARTPAK_PRD.DBO.TBLSTOCKRECORDSNAPSHOT
     )
       AND s.FACILITYNAME != '3rd Party Drop Ship'
-      AND s.ACTUALSTOCK > 0
       AND p.PRODUCTCATEGORY NOT IN (
           'Cardboard - SS', 'Cardboard - SP', 'Cardboard - 50/50',
           'Cardboard - 75/25', 'Misc. Packaging', 'Kraft Paper', 'Gum Tape'
@@ -30,6 +29,7 @@ WITH inventory AS (
     GROUP BY
         p.SKUID, p.SKUNAME, p.PRODUCTSKUKEY, p.PRODUCTCATEGORY,
         p.LEADTIMEMONTHS, p.CONTROLBUYERNAME
+    HAVING SUM(s.ACTUALSTOCK) > 0
 ),
 
 trailing_sales AS (
@@ -100,6 +100,8 @@ SELECT
     total_oh,
     plymouth_oh,
     reno_oh,
+    IFF(plymouth_oh <= 0, 'OOS', 'IN STOCK') AS plymouth_oos,
+    IFF(reno_oh <= 0, 'OOS', 'IN STOCK') AS reno_oos,
     ROUND(t30_avg_daily_sales, 2) AS t30_avg_daily_sales,
     ROUND(DIV0(total_oh, t30_avg_daily_sales), 1) AS t30_dos,
     ROUND(t90_avg_daily_sales, 2) AS t90_avg_daily_sales,
