@@ -52,7 +52,7 @@ selected_risks = filter_col_1.multiselect(
     "At-risk horizon",
     list(RISK_COLUMNS),
     placeholder="All risk statuses",
-    help="When multiple horizons are selected, a SKU is shown if it is at risk in any selected horizon.",
+    help="When multiple horizons are selected, a SKU is shown only if it is at risk in every selected horizon.",
 )
 plymouth_status = filter_col_2.selectbox(
     "Plymouth inventory",
@@ -66,7 +66,7 @@ reno_status = filter_col_3.selectbox(
 if selected_risks:
     risk_mask = inventory[
         [RISK_COLUMNS[horizon] for horizon in selected_risks]
-    ].eq("AT RISK").any(axis=1)
+    ].eq("AT RISK").all(axis=1)
     inventory = inventory[risk_mask]
 if plymouth_status != "All":
     inventory = inventory[
