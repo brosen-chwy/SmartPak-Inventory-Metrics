@@ -1,3 +1,5 @@
+import re
+
 import streamlit as st
 
 from smartpak_inventory.data import load_inventory_metrics
@@ -77,11 +79,24 @@ if reno_status != "All":
         inventory["RENO_OOS"] == ("OOS" if reno_status == "OOS" else "IN STOCK")
     ]
 
-search = st.text_input("Filter by SKU", placeholder="Enter all or part of a SKU")
-if search:
-    inventory = inventory[
-        inventory["SKU_NUMBER"].astype(str).str.contains(search, case=False, na=False)
+sku_search = st.text_area(
+    "Filter by SKU(s)",
+    placeholder="Paste one or more SKUs separated by commas, spaces, tabs, or new lines",
+    height=100,
+)
+if sku_search:
+    sku_values = [
+        value for value in re.split(r"[\s,;|]+", sku_search.strip()) if value
     ]
+    sku_numbers = inventory["SKU_NUMBER"].astype(str).str.strip()
+    if len(sku_values) == 1:
+        sku_mask = sku_numbers.str.contains(
+            sku_values[0], case=False, na=False, regex=False
+        )
+    else:
+        normalized_skus = {value.upper() for value in sku_values}
+        sku_mask = sku_numbers.str.upper().isin(normalized_skus)
+    inventory = inventory[sku_mask]
 
 metric_1, metric_2 = st.columns(2)
 metric_1.metric("SKUs", f"{len(inventory):,}")
