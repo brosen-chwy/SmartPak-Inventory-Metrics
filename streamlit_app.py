@@ -18,6 +18,20 @@ RISK_COLUMNS = {
     "F180": "F180_LT_RISK",
 }
 
+
+def reset_sku_filter():
+    st.session_state["sku_filter"] = ""
+
+
+def reset_all_filters():
+    st.session_state["category_filter"] = []
+    st.session_state["planner_filter"] = []
+    st.session_state["risk_filter"] = []
+    st.session_state["plymouth_filter"] = "All"
+    st.session_state["reno_filter"] = "All"
+    reset_sku_filter()
+
+
 try:
     inventory = load_inventory_metrics()
 except Exception as exc:
@@ -37,11 +51,13 @@ selected_categories = category_col.multiselect(
     "Product category",
     category_options,
     placeholder="All product categories",
+    key="category_filter",
 )
 selected_planners = planner_col.multiselect(
     "Supply planner",
     planner_options,
     placeholder="All supply planners",
+    key="planner_filter",
 )
 
 if selected_categories:
@@ -55,14 +71,17 @@ selected_risks = filter_col_1.multiselect(
     list(RISK_COLUMNS),
     placeholder="All risk statuses",
     help="When multiple horizons are selected, a SKU is shown only if it is at risk in every selected horizon.",
+    key="risk_filter",
 )
 plymouth_status = filter_col_2.selectbox(
     "Plymouth inventory",
     ["All", "OOS", "In stock"],
+    key="plymouth_filter",
 )
 reno_status = filter_col_3.selectbox(
     "Reno inventory",
     ["All", "OOS", "In stock"],
+    key="reno_filter",
 )
 
 if selected_risks:
@@ -83,7 +102,12 @@ sku_search = st.text_area(
     "Filter by SKU(s)",
     placeholder="Paste one or more SKUs separated by commas, spaces, tabs, or new lines",
     height=100,
+    key="sku_filter",
 )
+reset_sku_col, reset_all_col, _ = st.columns([1, 1, 4])
+reset_sku_col.button("Reset SKU filter", on_click=reset_sku_filter)
+reset_all_col.button("Reset all filters", on_click=reset_all_filters)
+
 if sku_search:
     sku_values = [
         value for value in re.split(r"[\s,;|]+", sku_search.strip()) if value
