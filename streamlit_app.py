@@ -25,6 +25,7 @@ def reset_sku_filter():
 
 def reset_all_filters():
     st.session_state["category_filter"] = []
+    st.session_state["supplier_filter"] = []
     st.session_state["planner_filter"] = []
     st.session_state["risk_filter"] = []
     st.session_state["plymouth_filter"] = "All"
@@ -44,14 +45,21 @@ except Exception as exc:
     st.stop()
 
 category_options = sorted(inventory["PRODUCT_CATEGORY"].dropna().unique().tolist())
+supplier_options = sorted(inventory["SUPPLIER_NAME"].dropna().unique().tolist())
 planner_options = sorted(inventory["SUPPLY_PLANNER"].dropna().unique().tolist())
 
-category_col, planner_col = st.columns(2)
+category_col, supplier_col, planner_col = st.columns(3)
 selected_categories = category_col.multiselect(
     "Product category",
     category_options,
     placeholder="All product categories",
     key="category_filter",
+)
+selected_suppliers = supplier_col.multiselect(
+    "Supplier",
+    supplier_options,
+    placeholder="All suppliers",
+    key="supplier_filter",
 )
 selected_planners = planner_col.multiselect(
     "Supply planner",
@@ -62,6 +70,8 @@ selected_planners = planner_col.multiselect(
 
 if selected_categories:
     inventory = inventory[inventory["PRODUCT_CATEGORY"].isin(selected_categories)]
+if selected_suppliers:
+    inventory = inventory[inventory["SUPPLIER_NAME"].isin(selected_suppliers)]
 if selected_planners:
     inventory = inventory[inventory["SUPPLY_PLANNER"].isin(selected_planners)]
 
@@ -138,6 +148,7 @@ st.dataframe(
         "SKU_NUMBER": "SKU",
         "SKU_NAME": "SKU name",
         "PRODUCT_CATEGORY": "Product category",
+        "SUPPLIER_NAME": "Supplier",
         "SUPPLY_PLANNER": "Supply planner",
         "LEAD_TIME_MONTHS": "Lead time (months)",
         "LEAD_TIME_DAYS": "Lead time (days)",

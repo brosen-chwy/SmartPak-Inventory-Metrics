@@ -5,6 +5,7 @@ WITH inventory AS (
         p.SKUNAME,
         p.PRODUCTSKUKEY,
         p.PRODUCTCATEGORY,
+        p.SUPPLIERNAME,
         p.LEADTIMEMONTHS,
         ROUND(p.LEADTIMEMONTHS * 30, 0) AS LEADTIMEDAYS,
         p.CONTROLBUYERNAME,
@@ -27,7 +28,7 @@ WITH inventory AS (
           'Cardboard - 75/25', 'Misc. Packaging', 'Kraft Paper', 'Gum Tape'
       )
     GROUP BY
-        p.SKUID, p.SKUNAME, p.PRODUCTSKUKEY, p.PRODUCTCATEGORY,
+        p.SKUID, p.SKUNAME, p.PRODUCTSKUKEY, p.PRODUCTCATEGORY, p.SUPPLIERNAME,
         p.LEADTIMEMONTHS, p.CONTROLBUYERNAME
     HAVING SUM(s.ACTUALSTOCK) > 0
 ),
@@ -94,6 +95,7 @@ SELECT
     SKUID AS sku_number,
     SKUNAME AS sku_name,
     PRODUCTCATEGORY AS product_category,
+    SUPPLIERNAME AS supplier_name,
     CONTROLBUYERNAME AS supply_planner,
     LEADTIMEMONTHS AS lead_time_months,
     LEADTIMEDAYS AS lead_time_days,
