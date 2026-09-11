@@ -1,5 +1,5 @@
 INVENTORY_METRICS_SQL = """
-WITH inventory AS (
+WITH product_backbone AS (
     SELECT
         p.SKUID,
         p.SKUNAME,
@@ -8,29 +8,32 @@ WITH inventory AS (
         p.SUPPLIERNAME,
         p.LEADTIMEMONTHS,
         ROUND(p.LEADTIMEMONTHS * 30, 0) AS LEADTIMEDAYS,
-        p.CONTROLBUYERNAME,
+        p.CONTROLBUYERNAME
+    FROM SMARTPAK_PRD.CORE.DIMPRODUCTSKU p
+    WHERE p.ROWCURRENTFLAG = TRUE
+      AND p.SKUINACTIVEFLAG = FALSE
+      AND p.PRODUCTINACTIVEFLAG = FALSE
+      AND p.PRODUCTCATEGORY NOT IN (
+          'Cardboard - SS', 'Cardboard - SP', 'Cardboard - 50/50',
+          'Cardboard - 75/25', 'Misc. Packaging', 'Kraft Paper', 'Gum Tape'
+      )
+),
+
+inventory AS (
+    SELECT
+        s.PRODUCTID AS SKUID,
         SUM(s.ACTUALSTOCK) AS total_oh,
         SUM(CASE WHEN s.FACILITYNAME = 'Plymouth' THEN s.ACTUALSTOCK ELSE 0 END)
             AS plymouth_oh,
         SUM(CASE WHEN s.FACILITYNAME = 'Reno' THEN s.ACTUALSTOCK ELSE 0 END)
             AS reno_oh
     FROM SMARTPAK_PRD.DBO.TBLSTOCKRECORDSNAPSHOT s
-    JOIN SMARTPAK_PRD.CORE.DIMPRODUCTSKU p
-      ON s.PRODUCTID = p.SKUID
-     AND p.ROWCURRENTFLAG = TRUE
     WHERE s.ENDOFWEEKDATE = (
         SELECT MAX(ENDOFWEEKDATE)
         FROM SMARTPAK_PRD.DBO.TBLSTOCKRECORDSNAPSHOT
     )
-      AND s.FACILITYNAME != '3rd Party Drop Ship'
-      AND p.PRODUCTCATEGORY NOT IN (
-          'Cardboard - SS', 'Cardboard - SP', 'Cardboard - 50/50',
-          'Cardboard - 75/25', 'Misc. Packaging', 'Kraft Paper', 'Gum Tape'
-      )
-    GROUP BY
-        p.SKUID, p.SKUNAME, p.PRODUCTSKUKEY, p.PRODUCTCATEGORY, p.SUPPLIERNAME,
-        p.LEADTIMEMONTHS, p.CONTROLBUYERNAME
-    HAVING SUM(s.ACTUALSTOCK) > 0
+      AND s.FACILITYNAME IN ('Plymouth', 'Reno')
+    GROUP BY s.PRODUCTID
 ),
 
 trailing_sales AS (
@@ -79,16 +82,22 @@ forward_forecast AS (
 
 metrics AS (
     SELECT
-        i.*,
+        p.*,
+        i.total_oh,
+        i.plymouth_oh,
+        i.reno_oh,
+        IFF(i.SKUID IS NULL, 'NO SNAPSHOT', 'AVAILABLE')
+            AS inventory_snapshot_status,
         ts.t30_avg_daily_sales,
         ts.t90_avg_daily_sales,
         ts.t180_avg_daily_sales,
         ff.f30_avg_daily_forecast,
         ff.f90_avg_daily_forecast,
         ff.f180_avg_daily_forecast
-    FROM inventory i
-    LEFT JOIN trailing_sales ts ON i.PRODUCTSKUKEY = ts.PRODUCTSKUKEY
-    LEFT JOIN forward_forecast ff ON CAST(i.SKUID AS TEXT) = ff.skuid
+    FROM product_backbone p
+    LEFT JOIN inventory i ON p.SKUID = i.SKUID
+    LEFT JOIN trailing_sales ts ON p.PRODUCTSKUKEY = ts.PRODUCTSKUKEY
+    LEFT JOIN forward_forecast ff ON CAST(p.SKUID AS TEXT) = ff.skuid
 )
 
 SELECT
@@ -102,8 +111,17 @@ SELECT
     total_oh,
     plymouth_oh,
     reno_oh,
-    IFF(plymouth_oh <= 0, 'OOS', 'IN STOCK') AS plymouth_oos,
-    IFF(reno_oh <= 0, 'OOS', 'IN STOCK') AS reno_oos,
+    CASE
+        WHEN inventory_snapshot_status = 'NO SNAPSHOT' THEN 'NO SNAPSHOT'
+        WHEN plymouth_oh <= 0 THEN 'OOS'
+        ELSE 'IN STOCK'
+    END AS plymouth_oos,
+    CASE
+        WHEN inventory_snapshot_status = 'NO SNAPSHOT' THEN 'NO SNAPSHOT'
+        WHEN reno_oh <= 0 THEN 'OOS'
+        ELSE 'IN STOCK'
+    END AS reno_oos,
+    inventory_snapshot_status,
     ROUND(t30_avg_daily_sales, 2) AS t30_avg_daily_sales,
     ROUND(DIV0(total_oh, t30_avg_daily_sales), 1) AS t30_dos,
     ROUND(t90_avg_daily_sales, 2) AS t90_avg_daily_sales,
@@ -116,24 +134,42 @@ SELECT
     ROUND(DIV0(total_oh, f90_avg_daily_forecast), 1) AS f90_dos,
     ROUND(f180_avg_daily_forecast, 2) AS f180_avg_daily_forecast,
     ROUND(DIV0(total_oh, f180_avg_daily_forecast), 1) AS f180_dos,
-    IFF(t30_avg_daily_sales > 0
-        AND DIV0(total_oh, t30_avg_daily_sales) <= LEADTIMEDAYS, 'AT RISK', 'OK')
-        AS t30_lt_risk,
-    IFF(t90_avg_daily_sales > 0
-        AND DIV0(total_oh, t90_avg_daily_sales) <= LEADTIMEDAYS, 'AT RISK', 'OK')
-        AS t90_lt_risk,
-    IFF(t180_avg_daily_sales > 0
-        AND DIV0(total_oh, t180_avg_daily_sales) <= LEADTIMEDAYS, 'AT RISK', 'OK')
-        AS t180_lt_risk,
-    IFF(f30_avg_daily_forecast > 0
-        AND DIV0(total_oh, f30_avg_daily_forecast) <= LEADTIMEDAYS, 'AT RISK', 'OK')
-        AS f30_lt_risk,
-    IFF(f90_avg_daily_forecast > 0
-        AND DIV0(total_oh, f90_avg_daily_forecast) <= LEADTIMEDAYS, 'AT RISK', 'OK')
-        AS f90_lt_risk,
-    IFF(f180_avg_daily_forecast > 0
-        AND DIV0(total_oh, f180_avg_daily_forecast) <= LEADTIMEDAYS, 'AT RISK', 'OK')
-        AS f180_lt_risk
+    CASE
+        WHEN inventory_snapshot_status = 'NO SNAPSHOT' THEN 'NO SNAPSHOT'
+        WHEN t30_avg_daily_sales > 0
+         AND DIV0(total_oh, t30_avg_daily_sales) <= LEADTIMEDAYS THEN 'AT RISK'
+        ELSE 'OK'
+    END AS t30_lt_risk,
+    CASE
+        WHEN inventory_snapshot_status = 'NO SNAPSHOT' THEN 'NO SNAPSHOT'
+        WHEN t90_avg_daily_sales > 0
+         AND DIV0(total_oh, t90_avg_daily_sales) <= LEADTIMEDAYS THEN 'AT RISK'
+        ELSE 'OK'
+    END AS t90_lt_risk,
+    CASE
+        WHEN inventory_snapshot_status = 'NO SNAPSHOT' THEN 'NO SNAPSHOT'
+        WHEN t180_avg_daily_sales > 0
+         AND DIV0(total_oh, t180_avg_daily_sales) <= LEADTIMEDAYS THEN 'AT RISK'
+        ELSE 'OK'
+    END AS t180_lt_risk,
+    CASE
+        WHEN inventory_snapshot_status = 'NO SNAPSHOT' THEN 'NO SNAPSHOT'
+        WHEN f30_avg_daily_forecast > 0
+         AND DIV0(total_oh, f30_avg_daily_forecast) <= LEADTIMEDAYS THEN 'AT RISK'
+        ELSE 'OK'
+    END AS f30_lt_risk,
+    CASE
+        WHEN inventory_snapshot_status = 'NO SNAPSHOT' THEN 'NO SNAPSHOT'
+        WHEN f90_avg_daily_forecast > 0
+         AND DIV0(total_oh, f90_avg_daily_forecast) <= LEADTIMEDAYS THEN 'AT RISK'
+        ELSE 'OK'
+    END AS f90_lt_risk,
+    CASE
+        WHEN inventory_snapshot_status = 'NO SNAPSHOT' THEN 'NO SNAPSHOT'
+        WHEN f180_avg_daily_forecast > 0
+         AND DIV0(total_oh, f180_avg_daily_forecast) <= LEADTIMEDAYS THEN 'AT RISK'
+        ELSE 'OK'
+    END AS f180_lt_risk
 FROM metrics
-ORDER BY total_oh DESC
+ORDER BY total_oh DESC NULLS LAST
 """

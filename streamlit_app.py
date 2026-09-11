@@ -18,6 +18,12 @@ RISK_COLUMNS = {
     "F180": "F180_LT_RISK",
 }
 
+INVENTORY_STATUS_VALUES = {
+    "OOS": "OOS",
+    "In stock": "IN STOCK",
+    "No snapshot": "NO SNAPSHOT",
+}
+
 
 def reset_sku_filter():
     st.session_state["sku_filter"] = ""
@@ -85,12 +91,12 @@ selected_risks = filter_col_1.multiselect(
 )
 plymouth_status = filter_col_2.selectbox(
     "Plymouth inventory",
-    ["All", "OOS", "In stock"],
+    ["All", *INVENTORY_STATUS_VALUES],
     key="plymouth_filter",
 )
 reno_status = filter_col_3.selectbox(
     "Reno inventory",
-    ["All", "OOS", "In stock"],
+    ["All", *INVENTORY_STATUS_VALUES],
     key="reno_filter",
 )
 
@@ -101,11 +107,11 @@ if selected_risks:
     inventory = inventory[risk_mask]
 if plymouth_status != "All":
     inventory = inventory[
-        inventory["PLYMOUTH_OOS"] == ("OOS" if plymouth_status == "OOS" else "IN STOCK")
+        inventory["PLYMOUTH_OOS"] == INVENTORY_STATUS_VALUES[plymouth_status]
     ]
 if reno_status != "All":
     inventory = inventory[
-        inventory["RENO_OOS"] == ("OOS" if reno_status == "OOS" else "IN STOCK")
+        inventory["RENO_OOS"] == INVENTORY_STATUS_VALUES[reno_status]
     ]
 
 sku_search = st.text_area(
@@ -137,7 +143,10 @@ metric_1.metric("SKUs", f"{len(inventory):,}")
 metric_2.metric("Network units on hand", f"{inventory['TOTAL_OH'].sum():,.0f}")
 
 st.subheader("SKUs at risk by horizon - Network Level")
-st.caption("On-order inventory is not currently included in these risk calculations.")
+st.caption(
+    "On-order inventory is not currently included. SKUs without a latest "
+    "Plymouth/Reno snapshot are excluded from risk counts."
+)
 risk_metrics = st.columns(6)
 for metric, (label, column) in zip(risk_metrics, RISK_COLUMNS.items()):
     metric.metric(label, f"{inventory[column].eq('AT RISK').sum():,}")
@@ -146,6 +155,7 @@ st.subheader("OOS SKUs by location")
 selected_sku_count = len(inventory)
 plymouth_oos_count = inventory["PLYMOUTH_OOS"].eq("OOS").sum()
 reno_oos_count = inventory["RENO_OOS"].eq("OOS").sum()
+no_snapshot_count = inventory["INVENTORY_SNAPSHOT_STATUS"].eq("NO SNAPSHOT").sum()
 
 plymouth_oos_pct = (
     f"{plymouth_oos_count / selected_sku_count:.1%}" if selected_sku_count else "—"
@@ -159,6 +169,10 @@ oos_metric_1.metric("Plymouth OOS SKUs", f"{plymouth_oos_count:,}")
 oos_metric_2.metric("Plymouth OOS %", plymouth_oos_pct)
 oos_metric_3.metric("Reno OOS SKUs", f"{reno_oos_count:,}")
 oos_metric_4.metric("Reno OOS %", reno_oos_pct)
+st.caption(
+    f"{no_snapshot_count:,} selected SKUs have no Plymouth/Reno record in the "
+    "latest inventory snapshot and are not counted as OOS."
+)
 
 st.dataframe(
     inventory,
@@ -175,6 +189,7 @@ st.dataframe(
         "RENO_OH": st.column_config.NumberColumn("Reno OH", format="%.0f"),
         "PLYMOUTH_OOS": "Plymouth status",
         "RENO_OOS": "Reno status",
+        "INVENTORY_SNAPSHOT_STATUS": "Inventory snapshot status",
         "T30_AVG_DAILY_SALES": st.column_config.NumberColumn("T30 avg sales", format="%.2f"),
         "T30_DOS": st.column_config.NumberColumn("T30 DOS", format="%.1f"),
         "T90_AVG_DAILY_SALES": st.column_config.NumberColumn("T90 avg sales", format="%.2f"),
