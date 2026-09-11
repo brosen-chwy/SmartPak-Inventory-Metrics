@@ -88,6 +88,7 @@ metric_1.metric("SKUs", f"{len(inventory):,}")
 metric_2.metric("Network units on hand", f"{inventory['TOTAL_OH'].sum():,.0f}")
 
 st.subheader("SKUs at risk by horizon")
+st.caption("On-order inventory is not currently included in these risk calculations.")
 risk_metrics = st.columns(6)
 for metric, (label, column) in zip(risk_metrics, RISK_COLUMNS.items()):
     metric.metric(label, f"{inventory[column].eq('AT RISK').sum():,}")
