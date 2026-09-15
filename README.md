@@ -2,6 +2,10 @@
 Project for creating the data sources related to SmartPak. 
 This repo will grow as the business evolves and data merges from temporary snowflake tables to permanent Chewy data sources. 
 
+## Change log
+
+- 9/15/26: Removed at risk profiles and added better network level summary data within headers.
+
 ## First dashboard slice
 
 The initial Streamlit page shows network, Plymouth, and Reno on-hand inventory,
