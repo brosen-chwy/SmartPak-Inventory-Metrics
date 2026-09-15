@@ -190,3 +190,80 @@ st.dataframe(
     hide_index=True,
     use_container_width=True,
 )
+
+st.subheader("Source of truth guide")
+st.caption(
+    "Raw warehouse fields used by this dashboard are listed below. Calculated "
+    "and derived dashboard columns are omitted."
+)
+
+source_of_truth = [
+    {
+        "Data source": "SMARTPAK_PRD.CORE.DIMPRODUCTSKU",
+        "Column header": column,
+    }
+    for column in (
+        "SKUID",
+        "SKUNAME",
+        "PRODUCTSKUKEY",
+        "PRODUCTCATEGORY",
+        "SUPPLIERNAME",
+        "LEADTIMEMONTHS",
+        "CONTROLBUYERNAME",
+        "ROWCURRENTFLAG",
+        "SKUINACTIVEFLAG",
+        "PRODUCTINACTIVEFLAG",
+    )
+]
+source_of_truth.extend(
+    {
+        "Data source": "SMARTPAK_PRD.DBO.TBLSTOCKRECORDSNAPSHOT",
+        "Column header": column,
+    }
+    for column in (
+        "PRODUCTID",
+        "ACTUALSTOCK",
+        "FACILITYNAME",
+        "ENDOFWEEKDATE",
+    )
+)
+source_of_truth.extend(
+    {
+        "Data source": "SMARTPAK_PRD.SALES.FACTSALESDETAIL",
+        "Column header": column,
+    }
+    for column in (
+        "PRODUCTSKUKEY",
+        "ORDERDATEKEY",
+        "ORDEREDQUANTITY",
+        "DEMANDFLAG",
+    )
+)
+source_of_truth.extend(
+    {
+        "Data source": (
+            "EDLDB.SC_SANDBOX."
+            "BEZOS_PROD_FCST_ITEM_DAY_NETWORK_COLT_SMARTEQUINE"
+        ),
+        "Column header": column,
+    }
+    for column in (
+        "PRODUCT_PART_NUMBER",
+        "FCST_QTY",
+        "SNAPSHOT_DATE",
+        "FORECAST_DATE",
+    )
+)
+
+st.dataframe(
+    source_of_truth,
+    column_config={
+        "Data source": st.column_config.TextColumn("Data source", width="large"),
+        "Column header": st.column_config.TextColumn(
+            "Column header pulled from that data source",
+            width="medium",
+        ),
+    },
+    hide_index=True,
+    use_container_width=True,
+)
