@@ -9,15 +9,6 @@ st.set_page_config(page_title="SmartPak Inventory & Metrics", layout="wide")
 st.title("SmartPak Inventory & Metrics")
 st.caption("Network inventory, trailing sales, and forward forecast")
 
-RISK_COLUMNS = {
-    "T30": "T30_LT_RISK",
-    "T90": "T90_LT_RISK",
-    "T180": "T180_LT_RISK",
-    "F30": "F30_LT_RISK",
-    "F90": "F90_LT_RISK",
-    "F180": "F180_LT_RISK",
-}
-
 INVENTORY_STATUS_VALUES = {
     "OOS": "OOS",
     "In stock": "IN STOCK",
@@ -33,7 +24,6 @@ def reset_all_filters():
     st.session_state["category_filter"] = []
     st.session_state["supplier_filter"] = []
     st.session_state["planner_filter"] = []
-    st.session_state["risk_filter"] = []
     st.session_state["plymouth_filter"] = "All"
     st.session_state["reno_filter"] = "All"
     reset_sku_filter()
@@ -81,30 +71,18 @@ if selected_suppliers:
 if selected_planners:
     inventory = inventory[inventory["SUPPLY_PLANNER"].isin(selected_planners)]
 
-filter_col_1, filter_col_2, filter_col_3 = st.columns([2, 1, 1])
-selected_risks = filter_col_1.multiselect(
-    "At-risk horizon",
-    list(RISK_COLUMNS),
-    placeholder="All risk statuses",
-    help="When multiple horizons are selected, a SKU is shown only if it is at risk in every selected horizon.",
-    key="risk_filter",
-)
-plymouth_status = filter_col_2.selectbox(
+filter_col_1, filter_col_2 = st.columns(2)
+plymouth_status = filter_col_1.selectbox(
     "Plymouth inventory",
     ["All", *INVENTORY_STATUS_VALUES],
     key="plymouth_filter",
 )
-reno_status = filter_col_3.selectbox(
+reno_status = filter_col_2.selectbox(
     "Reno inventory",
     ["All", *INVENTORY_STATUS_VALUES],
     key="reno_filter",
 )
 
-if selected_risks:
-    risk_mask = inventory[
-        [RISK_COLUMNS[horizon] for horizon in selected_risks]
-    ].eq("AT RISK").all(axis=1)
-    inventory = inventory[risk_mask]
 if plymouth_status != "All":
     inventory = inventory[
         inventory["PLYMOUTH_OOS"] == INVENTORY_STATUS_VALUES[plymouth_status]
