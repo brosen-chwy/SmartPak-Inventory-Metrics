@@ -1,22 +1,18 @@
+import json
 import re
 
 import streamlit as st
 
 from smartpak_inventory.data import load_inventory_metrics
+from smartpak_inventory.summaries import (
+    build_verified_observations,
+    generate_verified_sku_summary,
+)
 
 
 st.set_page_config(page_title="SmartPak Inventory & Metrics", layout="wide")
 st.title("SmartPak Inventory & Metrics")
 st.caption("Network inventory, trailing sales, and forward forecast")
-
-RISK_COLUMNS = {
-    "T30": "T30_LT_RISK",
-    "T90": "T90_LT_RISK",
-    "T180": "T180_LT_RISK",
-    "F30": "F30_LT_RISK",
-    "F90": "F90_LT_RISK",
-    "F180": "F180_LT_RISK",
-}
 
 INVENTORY_STATUS_VALUES = {
     "OOS": "OOS",
@@ -27,13 +23,14 @@ INVENTORY_STATUS_VALUES = {
 
 def reset_sku_filter():
     st.session_state["sku_filter"] = ""
+    st.session_state.pop("sku_summary_result", None)
+    st.session_state.pop("sku_summary_sku", None)
 
 
 def reset_all_filters():
     st.session_state["category_filter"] = []
     st.session_state["supplier_filter"] = []
     st.session_state["planner_filter"] = []
-    st.session_state["risk_filter"] = []
     st.session_state["plymouth_filter"] = "All"
     st.session_state["reno_filter"] = "All"
     reset_sku_filter()
@@ -81,30 +78,18 @@ if selected_suppliers:
 if selected_planners:
     inventory = inventory[inventory["SUPPLY_PLANNER"].isin(selected_planners)]
 
-filter_col_1, filter_col_2, filter_col_3 = st.columns([2, 1, 1])
-selected_risks = filter_col_1.multiselect(
-    "At-risk horizon",
-    list(RISK_COLUMNS),
-    placeholder="All risk statuses",
-    help="When multiple horizons are selected, a SKU is shown only if it is at risk in every selected horizon.",
-    key="risk_filter",
-)
-plymouth_status = filter_col_2.selectbox(
+filter_col_1, filter_col_2 = st.columns(2)
+plymouth_status = filter_col_1.selectbox(
     "Plymouth inventory",
     ["All", *INVENTORY_STATUS_VALUES],
     key="plymouth_filter",
 )
-reno_status = filter_col_3.selectbox(
+reno_status = filter_col_2.selectbox(
     "Reno inventory",
     ["All", *INVENTORY_STATUS_VALUES],
     key="reno_filter",
 )
 
-if selected_risks:
-    risk_mask = inventory[
-        [RISK_COLUMNS[horizon] for horizon in selected_risks]
-    ].eq("AT RISK").all(axis=1)
-    inventory = inventory[risk_mask]
 if plymouth_status != "All":
     inventory = inventory[
         inventory["PLYMOUTH_OOS"] == INVENTORY_STATUS_VALUES[plymouth_status]
@@ -138,18 +123,24 @@ if sku_search:
         sku_mask = sku_numbers.str.upper().isin(normalized_skus)
     inventory = inventory[sku_mask]
 
-metric_1, metric_2 = st.columns(2)
+metric_1, metric_2, metric_3, metric_4 = st.columns(4)
 metric_1.metric("SKUs", f"{len(inventory):,}")
 metric_2.metric("Network units on hand", f"{inventory['TOTAL_OH'].sum():,.0f}")
-
-st.subheader("SKUs at risk by horizon - Network Level")
-st.caption(
-    "On-order inventory is not currently included. SKUs without a latest "
-    "Plymouth/Reno snapshot are excluded from risk counts."
+snapshot_inventory = inventory[
+    inventory["INVENTORY_SNAPSHOT_STATUS"].eq("AVAILABLE")
+]
+metric_3.metric(
+    "F30 network forecast/day",
+    f"{snapshot_inventory['F30_AVG_DAILY_FORECAST'].sum():,.1f}",
 )
-risk_metrics = st.columns(6)
-for metric, (label, column) in zip(risk_metrics, RISK_COLUMNS.items()):
-    metric.metric(label, f"{inventory[column].eq('AT RISK').sum():,}")
+metric_4.metric(
+    "T30 network sales/day",
+    f"{snapshot_inventory['T30_AVG_DAILY_SALES'].sum():,.1f}",
+)
+st.caption(
+    "Forecast and sales/day summaries include only SKUs available in the "
+    "latest inventory snapshot."
+)
 
 st.subheader("OOS SKUs by location")
 selected_sku_count = len(inventory)
@@ -174,9 +165,17 @@ st.caption(
     "latest inventory snapshot and are not counted as OOS."
 )
 
-st.dataframe(
-    inventory,
+summary_inventory = inventory.copy()
+summary_inventory.insert(0, "SKU_SUMMARY", False)
+
+edited_inventory = st.data_editor(
+    summary_inventory,
     column_config={
+        "SKU_SUMMARY": st.column_config.CheckboxColumn(
+            "SKU Summary",
+            help="Select one SKU to prepare a Cortex-assisted summary.",
+            default=False,
+        ),
         "SKU_NUMBER": "SKU",
         "SKU_NAME": "SKU name",
         "PRODUCT_CATEGORY": "Product category",
@@ -202,6 +201,102 @@ st.dataframe(
         "F90_DOS": st.column_config.NumberColumn("F90 DOS", format="%.1f"),
         "F180_AVG_DAILY_FORECAST": st.column_config.NumberColumn("F180 avg forecast", format="%.2f"),
         "F180_DOS": st.column_config.NumberColumn("F180 DOS", format="%.1f"),
+    },
+    disabled=inventory.columns.tolist(),
+    hide_index=True,
+    use_container_width=True,
+    key="inventory_summary_editor",
+)
+
+selected_summary_rows = edited_inventory[edited_inventory["SKU_SUMMARY"]]
+if len(selected_summary_rows) > 1:
+    st.warning("Select only one SKU at a time to generate a summary.")
+elif len(selected_summary_rows) == 1:
+    selected_row = selected_summary_rows.iloc[0]
+    selected_sku = str(selected_row["SKU_NUMBER"]).strip()
+
+    if st.session_state.get("sku_summary_sku") != selected_sku:
+        st.session_state.pop("sku_summary_result", None)
+
+    if st.button("Generate SKU summary", type="primary"):
+        verified_observations = build_verified_observations(selected_row)
+        observations_json = json.dumps(
+            verified_observations,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        try:
+            with st.spinner(f"Reviewing SKU {selected_sku} with Cortex…"):
+                st.session_state["sku_summary_result"] = (
+                    generate_verified_sku_summary(selected_sku, observations_json)
+                )
+                st.session_state["sku_summary_sku"] = selected_sku
+        except Exception as exc:
+            st.error(
+                "The SKU summary could not be generated. Confirm that the app "
+                "role has access to Snowflake Cortex AI functions."
+            )
+            with st.expander("Technical details"):
+                st.exception(exc)
+
+    summary_result = st.session_state.get("sku_summary_result")
+    if summary_result and summary_result.get("sku_number") == selected_sku:
+        st.subheader(f"Executive SKU summary for {selected_sku}")
+        st.caption(
+            "Cortex prioritizes verified observations calculated by the app; "
+            "it cannot add new numbers or unsupported explanations."
+        )
+        st.write(" ".join(summary_result["observations"]))
+        st.info(
+            "A material variance means 25% or more. On-order inventory is not "
+            "included. T30/T90/T180 and F30/F90/F180 compare rolling averages "
+            "across horizons; they do not measure day-to-day volatility."
+        )
+
+st.subheader("Source of truth guide")
+st.caption(
+    "Raw warehouse fields used by this dashboard are listed below. Calculated "
+    "and derived dashboard columns are omitted."
+)
+
+source_of_truth = [
+    {
+        "Data source": "SMARTPAK_PRD.CORE.DIMPRODUCTSKU",
+        "Column headers": (
+            "SKUID, SKUNAME, PRODUCTSKUKEY, PRODUCTCATEGORY, SUPPLIERNAME, "
+            "LEADTIMEMONTHS, CONTROLBUYERNAME, ROWCURRENTFLAG, "
+            "SKUINACTIVEFLAG, PRODUCTINACTIVEFLAG"
+        ),
+    },
+    {
+        "Data source": "SMARTPAK_PRD.DBO.TBLSTOCKRECORDSNAPSHOT",
+        "Column headers": "PRODUCTID, ACTUALSTOCK, FACILITYNAME, ENDOFWEEKDATE",
+    },
+    {
+        "Data source": "SMARTPAK_PRD.SALES.FACTSALESDETAIL",
+        "Column headers": (
+            "PRODUCTSKUKEY, ORDERDATEKEY, ORDEREDQUANTITY, DEMANDFLAG"
+        ),
+    },
+    {
+        "Data source": (
+            "EDLDB.SC_SANDBOX."
+            "BEZOS_PROD_FCST_ITEM_DAY_NETWORK_COLT_SMARTEQUINE"
+        ),
+        "Column headers": (
+            "PRODUCT_PART_NUMBER, FCST_QTY, SNAPSHOT_DATE, FORECAST_DATE"
+        ),
+    },
+]
+
+st.dataframe(
+    source_of_truth,
+    column_config={
+        "Data source": st.column_config.TextColumn("Data source", width="large"),
+        "Column headers": st.column_config.TextColumn(
+            "Column headers pulled from that data source",
+            width="large",
+        ),
     },
     hide_index=True,
     use_container_width=True,

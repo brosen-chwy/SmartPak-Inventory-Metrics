@@ -2,6 +2,18 @@
 Project for creating the data sources related to SmartPak. 
 This repo will grow as the business evolves and data merges from temporary snowflake tables to permanent Chewy data sources. 
 
+## Change log
+
+- 9/15/26 12:09 PM PDT: Reworked Cortex SKU summaries into executive prose
+  with positive in-stock context, OOS customer-experience opportunities, and
+  callouts for material sales and forecast variances of 25% or more.
+- 9/15/26 11:50 AM PDT: Added Cortex-assisted per-SKU summaries with
+  single-SKU selection, cached generation, and verified-fact controls that
+  prevent the model from adding unsupported numbers or explanations.
+- 9/15/26 11:11 AM PDT: Added a source-of-truth guide with raw column headers
+  grouped by data source.
+- 9/15/26: Removed at risk profiles and added better network level summary data within headers.
+
 ## First dashboard slice
 
 The initial Streamlit page shows network, Plymouth, and Reno on-hand inventory,
