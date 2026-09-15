@@ -4,6 +4,8 @@ This repo will grow as the business evolves and data merges from temporary snowf
 
 ## Change log
 
+- 9/15/26 11:11 AM PDT: Added a source-of-truth guide with raw column headers
+  grouped by data source.
 - 9/15/26: Removed at risk profiles and added better network level summary data within headers.
 
 ## First dashboard slice
