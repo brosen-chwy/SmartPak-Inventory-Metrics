@@ -1,8 +1,13 @@
+import json
 import re
 
 import streamlit as st
 
 from smartpak_inventory.data import load_inventory_metrics
+from smartpak_inventory.summaries import (
+    build_verified_observations,
+    generate_verified_sku_summary,
+)
 
 
 st.set_page_config(page_title="SmartPak Inventory & Metrics", layout="wide")
@@ -18,6 +23,8 @@ INVENTORY_STATUS_VALUES = {
 
 def reset_sku_filter():
     st.session_state["sku_filter"] = ""
+    st.session_state.pop("sku_summary_result", None)
+    st.session_state.pop("sku_summary_sku", None)
 
 
 def reset_all_filters():
@@ -158,9 +165,17 @@ st.caption(
     "latest inventory snapshot and are not counted as OOS."
 )
 
-st.dataframe(
-    inventory,
+summary_inventory = inventory.copy()
+summary_inventory.insert(0, "SKU_SUMMARY", False)
+
+edited_inventory = st.data_editor(
+    summary_inventory,
     column_config={
+        "SKU_SUMMARY": st.column_config.CheckboxColumn(
+            "SKU Summary",
+            help="Select one SKU to prepare a Cortex-assisted summary.",
+            default=False,
+        ),
         "SKU_NUMBER": "SKU",
         "SKU_NAME": "SKU name",
         "PRODUCT_CATEGORY": "Product category",
@@ -187,9 +202,57 @@ st.dataframe(
         "F180_AVG_DAILY_FORECAST": st.column_config.NumberColumn("F180 avg forecast", format="%.2f"),
         "F180_DOS": st.column_config.NumberColumn("F180 DOS", format="%.1f"),
     },
+    disabled=inventory.columns.tolist(),
     hide_index=True,
     use_container_width=True,
+    key="inventory_summary_editor",
 )
+
+selected_summary_rows = edited_inventory[edited_inventory["SKU_SUMMARY"]]
+if len(selected_summary_rows) > 1:
+    st.warning("Select only one SKU at a time to generate a summary.")
+elif len(selected_summary_rows) == 1:
+    selected_row = selected_summary_rows.iloc[0]
+    selected_sku = str(selected_row["SKU_NUMBER"]).strip()
+
+    if st.session_state.get("sku_summary_sku") != selected_sku:
+        st.session_state.pop("sku_summary_result", None)
+
+    if st.button("Generate SKU summary", type="primary"):
+        verified_observations = build_verified_observations(selected_row)
+        observations_json = json.dumps(
+            verified_observations,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        try:
+            with st.spinner(f"Reviewing SKU {selected_sku} with Cortex…"):
+                st.session_state["sku_summary_result"] = (
+                    generate_verified_sku_summary(selected_sku, observations_json)
+                )
+                st.session_state["sku_summary_sku"] = selected_sku
+        except Exception as exc:
+            st.error(
+                "The SKU summary could not be generated. Confirm that the app "
+                "role has access to Snowflake Cortex AI functions."
+            )
+            with st.expander("Technical details"):
+                st.exception(exc)
+
+    summary_result = st.session_state.get("sku_summary_result")
+    if summary_result and summary_result.get("sku_number") == selected_sku:
+        st.subheader(f"AI-assisted summary for SKU {selected_sku}")
+        st.caption(
+            "Cortex selects and orders verified observations calculated by the "
+            "app. It cannot add new numbers or unsupported explanations."
+        )
+        for observation in summary_result["observations"]:
+            st.markdown(f"- {observation}")
+        st.info(
+            "On-order inventory is not included. T30/T90/T180 and "
+            "F30/F90/F180 compare rolling averages across horizons; they do not "
+            "measure day-to-day volatility."
+        )
 
 st.subheader("Source of truth guide")
 st.caption(

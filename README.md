@@ -4,6 +4,9 @@ This repo will grow as the business evolves and data merges from temporary snowf
 
 ## Change log
 
+- 9/15/26 11:50 AM PDT: Added Cortex-assisted per-SKU summaries with
+  single-SKU selection, cached generation, and verified-fact controls that
+  prevent the model from adding unsupported numbers or explanations.
 - 9/15/26 11:11 AM PDT: Added a source-of-truth guide with raw column headers
   grouped by data source.
 - 9/15/26: Removed at risk profiles and added better network level summary data within headers.
