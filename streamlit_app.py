@@ -116,9 +116,17 @@ if sku_search:
         sku_mask = sku_numbers.str.upper().isin(normalized_skus)
     inventory = inventory[sku_mask]
 
-metric_1, metric_2 = st.columns(2)
+metric_1, metric_2, metric_3, metric_4 = st.columns(4)
 metric_1.metric("SKUs", f"{len(inventory):,}")
 metric_2.metric("Network units on hand", f"{inventory['TOTAL_OH'].sum():,.0f}")
+metric_3.metric(
+    "F30 network forecast/day",
+    f"{inventory['F30_AVG_DAILY_FORECAST'].sum():,.1f}",
+)
+metric_4.metric(
+    "T30 network sales/day",
+    f"{inventory['T30_AVG_DAILY_SALES'].sum():,.1f}",
+)
 
 st.subheader("OOS SKUs by location")
 selected_sku_count = len(inventory)
