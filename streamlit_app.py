@@ -200,68 +200,40 @@ st.caption(
 source_of_truth = [
     {
         "Data source": "SMARTPAK_PRD.CORE.DIMPRODUCTSKU",
-        "Column header": column,
-    }
-    for column in (
-        "SKUID",
-        "SKUNAME",
-        "PRODUCTSKUKEY",
-        "PRODUCTCATEGORY",
-        "SUPPLIERNAME",
-        "LEADTIMEMONTHS",
-        "CONTROLBUYERNAME",
-        "ROWCURRENTFLAG",
-        "SKUINACTIVEFLAG",
-        "PRODUCTINACTIVEFLAG",
-    )
-]
-source_of_truth.extend(
+        "Column headers": (
+            "SKUID, SKUNAME, PRODUCTSKUKEY, PRODUCTCATEGORY, SUPPLIERNAME, "
+            "LEADTIMEMONTHS, CONTROLBUYERNAME, ROWCURRENTFLAG, "
+            "SKUINACTIVEFLAG, PRODUCTINACTIVEFLAG"
+        ),
+    },
     {
         "Data source": "SMARTPAK_PRD.DBO.TBLSTOCKRECORDSNAPSHOT",
-        "Column header": column,
-    }
-    for column in (
-        "PRODUCTID",
-        "ACTUALSTOCK",
-        "FACILITYNAME",
-        "ENDOFWEEKDATE",
-    )
-)
-source_of_truth.extend(
+        "Column headers": "PRODUCTID, ACTUALSTOCK, FACILITYNAME, ENDOFWEEKDATE",
+    },
     {
         "Data source": "SMARTPAK_PRD.SALES.FACTSALESDETAIL",
-        "Column header": column,
-    }
-    for column in (
-        "PRODUCTSKUKEY",
-        "ORDERDATEKEY",
-        "ORDEREDQUANTITY",
-        "DEMANDFLAG",
-    )
-)
-source_of_truth.extend(
+        "Column headers": (
+            "PRODUCTSKUKEY, ORDERDATEKEY, ORDEREDQUANTITY, DEMANDFLAG"
+        ),
+    },
     {
         "Data source": (
             "EDLDB.SC_SANDBOX."
             "BEZOS_PROD_FCST_ITEM_DAY_NETWORK_COLT_SMARTEQUINE"
         ),
-        "Column header": column,
-    }
-    for column in (
-        "PRODUCT_PART_NUMBER",
-        "FCST_QTY",
-        "SNAPSHOT_DATE",
-        "FORECAST_DATE",
-    )
-)
+        "Column headers": (
+            "PRODUCT_PART_NUMBER, FCST_QTY, SNAPSHOT_DATE, FORECAST_DATE"
+        ),
+    },
+]
 
 st.dataframe(
     source_of_truth,
     column_config={
         "Data source": st.column_config.TextColumn("Data source", width="large"),
-        "Column header": st.column_config.TextColumn(
-            "Column header pulled from that data source",
-            width="medium",
+        "Column headers": st.column_config.TextColumn(
+            "Column headers pulled from that data source",
+            width="large",
         ),
     },
     hide_index=True,
