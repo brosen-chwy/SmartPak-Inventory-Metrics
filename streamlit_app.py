@@ -241,17 +241,16 @@ elif len(selected_summary_rows) == 1:
 
     summary_result = st.session_state.get("sku_summary_result")
     if summary_result and summary_result.get("sku_number") == selected_sku:
-        st.subheader(f"AI-assisted summary for SKU {selected_sku}")
+        st.subheader(f"Executive SKU summary for {selected_sku}")
         st.caption(
-            "Cortex selects and orders verified observations calculated by the "
-            "app. It cannot add new numbers or unsupported explanations."
+            "Cortex prioritizes verified observations calculated by the app; "
+            "it cannot add new numbers or unsupported explanations."
         )
-        for observation in summary_result["observations"]:
-            st.markdown(f"- {observation}")
+        st.write(" ".join(summary_result["observations"]))
         st.info(
-            "On-order inventory is not included. T30/T90/T180 and "
-            "F30/F90/F180 compare rolling averages across horizons; they do not "
-            "measure day-to-day volatility."
+            "A material variance means 25% or more. On-order inventory is not "
+            "included. T30/T90/T180 and F30/F90/F180 compare rolling averages "
+            "across horizons; they do not measure day-to-day volatility."
         )
 
 st.subheader("Source of truth guide")

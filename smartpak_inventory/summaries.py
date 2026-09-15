@@ -7,6 +7,7 @@ import streamlit as st
 
 CORTEX_MODEL = "mistral-large2"
 MAX_SUMMARY_OBSERVATIONS = 6
+MATERIAL_VARIANCE_THRESHOLD = 0.25
 
 _HOSTED_CORTEX_SQL = """
 SELECT AI_COMPLETE(
@@ -77,7 +78,7 @@ def _comparison_text(
 
 
 def build_verified_observations(row: Mapping[str, Any]) -> list[dict[str, str]]:
-    """Create the only statements Cortex is allowed to select for display."""
+    """Create the only executive statements Cortex may select for display."""
     sku = _label(row, "SKU_NUMBER")
     name = _label(row, "SKU_NAME")
     observations = [
@@ -91,34 +92,54 @@ def build_verified_observations(row: Mapping[str, Any]) -> list[dict[str, str]]:
     snapshot_status = _label(row, "INVENTORY_SNAPSHOT_STATUS")
     if snapshot_status == "NO SNAPSHOT":
         inventory_text = (
-            "No Plymouth or Reno record is available in the latest inventory "
-            "snapshot, so location stock status cannot be evaluated."
+            "The latest inventory snapshot has no Plymouth or Reno record for "
+            "this SKU, so its location availability and customer-delivery "
+            "coverage cannot be evaluated."
         )
     else:
         total_oh = _number(row, "TOTAL_OH")
         plymouth_oh = _number(row, "PLYMOUTH_OH")
         reno_oh = _number(row, "RENO_OH")
-        inventory_parts = []
-        if total_oh is not None:
-            inventory_parts.append(f"network on hand is {_format_units(total_oh)} units")
+        plymouth_status = _label(row, "PLYMOUTH_OOS")
+        reno_status = _label(row, "RENO_OOS")
+        total_text = (
+            f" Network on hand is {_format_units(total_oh)} units."
+            if total_oh is not None
+            else ""
+        )
+        location_parts = []
         if plymouth_oh is not None:
-            inventory_parts.append(
-                f"Plymouth is {_label(row, 'PLYMOUTH_OOS')} with "
-                f"{_format_units(plymouth_oh)} units"
+            location_parts.append(
+                f"Plymouth is {plymouth_status} with {_format_units(plymouth_oh)} units"
             )
         if reno_oh is not None:
-            inventory_parts.append(
-                f"Reno is {_label(row, 'RENO_OOS')} with "
-                f"{_format_units(reno_oh)} units"
+            location_parts.append(
+                f"Reno is {reno_status} with {_format_units(reno_oh)} units"
             )
-        if inventory_parts:
-            inventory_text = "; ".join(inventory_parts)
-            inventory_text = inventory_text[0].upper() + inventory_text[1:] + "."
+        locations = " and ".join(location_parts)
+        if plymouth_status == "IN STOCK" and reno_status == "IN STOCK":
+            inventory_text = (
+                f"{locations}, which is a positive position for customer "
+                f"availability and delivery coverage.{total_text}"
+            )
+        elif "OOS" in (plymouth_status, reno_status):
+            inventory_text = (
+                f"{locations}. This out-of-stock position is an immediate "
+                "opportunity to improve customer experience and speed-to-customer "
+                f"delivery.{total_text}"
+            )
+        elif locations:
+            inventory_text = f"{locations}.{total_text}"
         else:
             inventory_text = "Inventory quantities are unavailable."
 
     observations.append(
-        {"id": "inventory", "category": "inventory", "text": inventory_text}
+        {
+            "id": "inventory",
+            "category": "inventory",
+            "required": "true",
+            "text": inventory_text,
+        }
     )
 
     sales = {
@@ -126,43 +147,28 @@ def build_verified_observations(row: Mapping[str, Any]) -> list[dict[str, str]]:
         for horizon in (30, 90, 180)
     }
     if all(value is not None for value in sales.values()):
+        sales_change = (sales[30] - sales[180]) / abs(sales[180]) if sales[180] else None
+        if sales_change is None:
+            sales_text = _comparison_text(
+                "T30 average daily sales", sales[30],
+                "T180 average daily sales", sales[180],
+            )
+        elif abs(sales_change) >= MATERIAL_VARIANCE_THRESHOLD:
+            direction = "above" if sales_change > 0 else "below"
+            meaning = "accelerated" if sales_change > 0 else "softened"
+            sales_text = (
+                f"Recent sales have {meaning}: T30 average daily sales of "
+                f"{_format_rate(sales[30])} are {abs(sales_change):.1%} {direction} "
+                f"the T180 pace of {_format_rate(sales[180])}."
+            )
+        else:
+            sales_text = (
+                f"Recent sales are broadly stable: T30 average daily sales are "
+                f"{_format_rate(sales[30])} versus {_format_rate(sales[180])} "
+                "across T180."
+            )
         observations.append(
-            {
-                "id": "sales_levels",
-                "category": "sales",
-                "text": (
-                    "Average daily trailing sales are "
-                    f"T30 {_format_rate(sales[30])}, "
-                    f"T90 {_format_rate(sales[90])}, and "
-                    f"T180 {_format_rate(sales[180])} units."
-                ),
-            }
-        )
-        observations.append(
-            {
-                "id": "sales_change",
-                "category": "sales",
-                "text": _comparison_text(
-                    "T30 average daily sales",
-                    sales[30],
-                    "T180 average daily sales",
-                    sales[180],
-                ),
-            }
-        )
-        sales_min = min(sales.values())
-        sales_max = max(sales.values())
-        observations.append(
-            {
-                "id": "sales_spread",
-                "category": "sales",
-                "text": (
-                    "Trailing average daily sales range from "
-                    f"{_format_rate(sales_min)} to {_format_rate(sales_max)} "
-                    "across T30, T90, and T180; this is a rolling-horizon "
-                    "comparison, not day-to-day volatility."
-                ),
-            }
+            {"id": "sales_trend", "category": "sales", "text": sales_text}
         )
 
     forecast = {
@@ -170,76 +176,80 @@ def build_verified_observations(row: Mapping[str, Any]) -> list[dict[str, str]]:
         for horizon in (30, 90, 180)
     }
     if all(value is not None for value in forecast.values()):
-        observations.append(
-            {
-                "id": "forecast_levels",
-                "category": "forecast",
-                "text": (
-                    "Average daily forward forecast is "
-                    f"F30 {_format_rate(forecast[30])}, "
-                    f"F90 {_format_rate(forecast[90])}, and "
-                    f"F180 {_format_rate(forecast[180])} units."
-                ),
-            }
+        forecast_change = (
+            (forecast[30] - forecast[180]) / abs(forecast[180])
+            if forecast[180]
+            else None
         )
+        if forecast_change is not None and abs(forecast_change) >= MATERIAL_VARIANCE_THRESHOLD:
+            direction = "above" if forecast_change > 0 else "below"
+            forecast_text = (
+                f"The near-term forecast differs materially from the longer-term "
+                f"outlook: F30 of {_format_rate(forecast[30])} units per day is "
+                f"{abs(forecast_change):.1%} {direction} F180 of "
+                f"{_format_rate(forecast[180])}."
+            )
+        else:
+            forecast_text = (
+                f"The forecast is consistent across horizons, ranging from "
+                f"{_format_rate(min(forecast.values()))} to "
+                f"{_format_rate(max(forecast.values()))} units per day across "
+                "F30, F90, and F180."
+            )
         observations.append(
-            {
-                "id": "forecast_change",
-                "category": "forecast",
-                "text": _comparison_text(
-                    "F30 average daily forecast",
-                    forecast[30],
-                    "F180 average daily forecast",
-                    forecast[180],
-                ),
-            }
-        )
-        forecast_min = min(forecast.values())
-        forecast_max = max(forecast.values())
-        observations.append(
-            {
-                "id": "forecast_spread",
-                "category": "forecast",
-                "text": (
-                    "Average daily forecast ranges from "
-                    f"{_format_rate(forecast_min)} to "
-                    f"{_format_rate(forecast_max)} across F30, F90, and F180; "
-                    "this compares forecast horizons rather than daily forecast "
-                    "volatility."
-                ),
-            }
+            {"id": "forecast_trend", "category": "forecast", "text": forecast_text}
         )
 
+    material_gaps = []
     for horizon in (30, 90, 180):
-        if sales[horizon] is None or forecast[horizon] is None:
+        actual = sales[horizon]
+        planned = forecast[horizon]
+        if actual is None or planned is None or actual == 0:
             continue
+        gap = (planned - actual) / abs(actual)
+        if abs(gap) >= MATERIAL_VARIANCE_THRESHOLD:
+            material_gaps.append((horizon, gap))
+
+    if material_gaps:
+        gap_details = ", ".join(
+            f"{horizon}-day {abs(gap):.1%} {'above' if gap > 0 else 'below'}"
+            for horizon, gap in material_gaps
+        )
+        directions = {"above" if gap > 0 else "below" for _, gap in material_gaps}
+        if directions == {"below"}:
+            meaning = (
+                "The forecast may not fully reflect the recent sales pace, "
+                "making forecast review a key opportunity."
+            )
+        elif directions == {"above"}:
+            meaning = (
+                "The forecast assumes demand above the recent sales pace, "
+                "making forecast review a key opportunity."
+            )
+        else:
+            meaning = (
+                "The direction changes by horizon, making forecast review a key opportunity."
+            )
         observations.append(
             {
-                "id": f"sales_vs_forecast_{horizon}",
+                "id": "material_sales_forecast_gap",
                 "category": "sales_vs_forecast",
-                "text": _comparison_text(
-                    f"F{horizon} average daily forecast",
-                    forecast[horizon],
-                    f"T{horizon} average daily sales",
-                    sales[horizon],
+                "required": "true",
+                "text": (
+                    f"Sales and forecast differ materially at these comparisons: "
+                    f"{gap_details}. {meaning}"
                 ),
             }
         )
-
-    dos = {
-        horizon: _number(row, f"F{horizon}_DOS") for horizon in (30, 90, 180)
-    }
-    if any(value is not None for value in dos.values()):
-        dos_parts = [
-            f"F{horizon} {value:,.1f} days"
-            for horizon, value in dos.items()
-            if value is not None
-        ]
+    else:
         observations.append(
             {
-                "id": "forecast_dos",
-                "category": "inventory",
-                "text": "Forecast-based days of supply are " + ", ".join(dos_parts) + ".",
+                "id": "sales_forecast_alignment",
+                "category": "sales_vs_forecast",
+                "text": (
+                    "Sales and forecast are reasonably aligned across the comparable "
+                    "30-, 90-, and 180-day horizons, with no variance of 25% or more."
+                ),
             }
         )
 
@@ -253,7 +263,8 @@ def _selection_prompt(observations: list[dict[str, str]]) -> str:
         "observation IDs that appear in the supplied JSON. Select between 3 and "
         f"{MAX_SUMMARY_OBSERVATIONS} IDs, ordered by importance. Prioritize "
         "inventory location status, recent-versus-longer-term sales, forecast "
-        "shape, sales-versus-forecast differences, and days of supply. Do not "
+        "shape, and material sales-versus-forecast differences. Prefer concise "
+        "interpretive statements over raw metric recitation. Do not "
         "select identity unless fewer than three other observations exist. Do not "
         "infer causes, risk, replenishment actions, or on-order inventory.\n\n"
         "APPROVED_OBSERVATIONS_JSON:\n"
@@ -318,7 +329,11 @@ def generate_verified_sku_summary(
         if isinstance(item, dict) and "id" in item and "text" in item
     }
     response = _call_cortex(_selection_prompt(observations))
-    selected = []
+    selected = [
+        item["id"]
+        for item in observations
+        if item.get("required") == "true" and item["id"] in observations_by_id
+    ]
     for observation_id in _selected_ids(response):
         if observation_id in observations_by_id and observation_id not in selected:
             selected.append(observation_id)

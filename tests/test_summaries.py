@@ -30,14 +30,28 @@ SAMPLE_SKU = {
 
 
 class VerifiedObservationsTest(unittest.TestCase):
-    def test_builds_deterministic_inventory_and_comparison_facts(self):
+    def test_builds_deterministic_executive_callouts(self):
         observations = build_verified_observations(SAMPLE_SKU)
         by_id = {item["id"]: item["text"] for item in observations}
 
-        self.assertIn("Plymouth is IN STOCK with 180 units", by_id["inventory"])
-        self.assertIn("20.0% above", by_id["sales_change"])
-        self.assertIn("25.0% above", by_id["sales_vs_forecast_30"])
-        self.assertIn("not day-to-day volatility", by_id["sales_spread"])
+        self.assertIn("positive position", by_id["inventory"])
+        self.assertIn("broadly stable", by_id["sales_trend"])
+        self.assertIn("25.0% above", by_id["material_sales_forecast_gap"])
+        self.assertIn("forecast review", by_id["material_sales_forecast_gap"])
+
+    def test_oos_location_is_an_immediate_customer_opportunity(self):
+        row = dict(SAMPLE_SKU)
+        row["RENO_OH"] = 0
+        row["RENO_OOS"] = "OOS"
+
+        observations = build_verified_observations(row)
+        inventory_text = next(
+            item["text"] for item in observations if item["id"] == "inventory"
+        )
+
+        self.assertIn("Reno is OOS", inventory_text)
+        self.assertIn("immediate opportunity", inventory_text)
+        self.assertIn("speed-to-customer delivery", inventory_text)
 
     def test_no_snapshot_does_not_invent_location_status(self):
         row = dict(SAMPLE_SKU)
@@ -60,7 +74,7 @@ class VerifiedObservationsTest(unittest.TestCase):
             "selected_ids": [
                 "inventory",
                 "invented_claim",
-                "sales_change",
+                "sales_trend",
                 "inventory",
             ]
         }
@@ -70,9 +84,10 @@ class VerifiedObservationsTest(unittest.TestCase):
             json.dumps(observations),
         )
 
-        self.assertEqual(len(result["observations"]), 2)
-        self.assertTrue(result["observations"][0].startswith("Network on hand"))
-        self.assertIn("20.0% above", result["observations"][1])
+        self.assertEqual(len(result["observations"]), 3)
+        self.assertIn("positive position", result["observations"][0])
+        self.assertIn("25.0% above", result["observations"][1])
+        self.assertIn("broadly stable", result["observations"][2])
 
 
 if __name__ == "__main__":
