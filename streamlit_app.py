@@ -142,15 +142,6 @@ metric_1, metric_2 = st.columns(2)
 metric_1.metric("SKUs", f"{len(inventory):,}")
 metric_2.metric("Network units on hand", f"{inventory['TOTAL_OH'].sum():,.0f}")
 
-st.subheader("SKUs at risk by horizon - Network Level")
-st.caption(
-    "On-order inventory is not currently included. SKUs without a latest "
-    "Plymouth/Reno snapshot are excluded from risk counts."
-)
-risk_metrics = st.columns(6)
-for metric, (label, column) in zip(risk_metrics, RISK_COLUMNS.items()):
-    metric.metric(label, f"{inventory[column].eq('AT RISK').sum():,}")
-
 st.subheader("OOS SKUs by location")
 selected_sku_count = len(inventory)
 plymouth_oos_count = inventory["PLYMOUTH_OOS"].eq("OOS").sum()
